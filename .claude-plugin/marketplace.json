@@ -1,0 +1,13 @@
+{
+  "name": "claude-sysmon",
+  "owner": {
+    "name": "adamsrnmsu"
+  },
+  "plugins": [
+    {
+      "name": "sysmon",
+      "source": "./"
+    }
+  ],
+  "description": "Hacker-style live memory, network and token graphs for Claude Code"
+}

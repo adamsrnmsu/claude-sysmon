@@ -1,0 +1,9 @@
+{
+  "name": "sysmon",
+  "version": "0.1.0",
+  "description": "Hacker-style live braille line graphs of memory and network usage",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "adamsrnmsu"
+  }
+}
