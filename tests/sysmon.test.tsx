@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-import { braille, parseNetstat, parseVmStat, rate } from '../hooks/register'
+import { alarms, bar, braille, drops, dur, parseNetstat, parsePmset, parseVmStat, rate } from '../hooks/register'
 
 const VM = `Mach Virtual Memory Statistics: (page size of 4096 bytes)
 Pages free:                                     4797.
@@ -58,7 +58,7 @@ test('samples every second and draws three graphs in the pane', async ($, on) =>
 
 test('records context tokens after each main-thread turn', async ($, on) => {
   const clock = mock.clock(on)
-  let tokens = 40000
+  let tokens = 20000 // session.start reads usage once (40k) before the two turns
   on('process.run', (_$, e) => ({
     value: { exitCode: 0, stdout: e.argv[0] === 'sysctl' ? '131072' : e.argv[0] === 'vm_stat' ? VM : NET, stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
   }))
@@ -75,5 +75,74 @@ test('records context tokens after each main-thread turn', async ($, on) => {
   await $.turn.complete({ ...turn, turnId: 'sub', agentId: 'a1' })
   const ui = await $.ui.mount({ plugin: 'sysmon', surface: 'terminal', component: 'Pane', requestId: 'sysmon', props: {} as never })
   expect(await ui.find({ type: 'Text', text: /TOK.*80\.0k\/200\.0k :: 2 turns/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('parses pmset battery and thermal state', async () => {
+  const batt = ` -InternalBattery-0 (id=7405667)\t82%; discharging; 3:12 remaining present: true`
+  const calm = `Note: No thermal warning level has been recorded\n\tCPU_Speed_Limit \t= 100`
+  expect(parsePmset(batt, calm)).toEqual({ percent: 82, state: 'discharging', throttled: false })
+  expect(parsePmset(batt, '\tCPU_Speed_Limit \t= 70')?.throttled).toBe(true)
+  expect(parsePmset(batt, 'Thermal warning level set to 2.')?.throttled).toBe(true)
+  expect(parsePmset(`Now drawing from 'AC Power'`, calm)).toBeNull() // a desktop Mac
+})
+
+test('formats bars, durations, compaction marks and red lines', async () => {
+  expect(bar(50, 4)).toBe('▓▓░░')
+  expect(bar(140, 2)).toBe('▓▓')
+  expect(dur(72 * 60000)).toBe('1h12m')
+  expect(dur(26 * 3600000)).toBe('1d2h')
+  // 100k then 30k is a compaction: its mark lands in the right cell of a 2-cell row
+  expect(drops([100, 120, 100, 30], 2)).toBe(' ▼')
+  expect(drops([100, 90, 80], 2)).toBe('  ')
+  const calm = { mem: [50], rx: [], tx: [], memUsedGb: 0, memTotalGb: 0, tokens: [100], window: 1000, tps: [], limits: [{ kind: 'five_hour', percentUsed: 40 }], costUsd: 0, startedAt: 0, now: 0, running: 0, power: null, attn: [], prompt: '' }
+  expect(alarms(calm)).toEqual([])
+  expect(alarms({ ...calm, mem: [95], tokens: [900], limits: [{ kind: 'five_hour', percentUsed: 92 }], power: { percent: 10, state: 'discharging', throttled: false } }))
+    .toEqual(['MEM', 'TOK', 'five_hour', 'PWR'])
+})
+
+test('shows limits, power, agents and the attention lines', async ($, on) => {
+  const clock = mock.clock(on)
+  const run = (stdout: string) => ({ value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
+  on('process.run', (_$, e) => {
+    const [cmd, , sub] = e.argv
+    if (cmd === 'sysctl') return run('131072')
+    if (cmd === 'vm_stat') return run(VM)
+    if (cmd === 'hostname') return run('gibson\n')
+    if (cmd === 'pmset') return run(sub === 'batt' ? '\t12%; discharging; 0:40 remaining' : '\tCPU_Speed_Limit \t= 100')
+    return run(NET)
+  })
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  on('command.register', (_$, e) => ({ value: { command: e.name } }))
+  const titles: string[] = []
+  on('ui.open', (_$, e) => (titles.push(e.title ?? ''), { value: { isPlaced: true as const } }))
+  const notes: string[] = []
+  on('ui.notify', (_$, e) => (notes.push(e.text), { value: { isSent: true as const, channel: 'terminal_bell' } }))
+  on('session.usage', () => ({
+    value: { startedAt: 3000 - 2 * 3600000, context: { tokens: 0, window: 200000 }, cost: { usd: 3 }, rateLimits: [{ kind: 'five_hour', percentUsed: 62, resetsAt: new Date(72 * 60000).toISOString() }] },
+  }))
+  on('agent.list', () => ({
+    value: [
+      { id: 'a1', description: 'scan logs', type: 'Explore', status: 'running' as const },
+      { id: 'a2', description: 'plan approval', type: 'Plan', status: 'waiting' as const, name: 'planner' },
+    ],
+  }))
+  on('env.get', () => ({ value: '/home/me' }))
+  on('fs.list', () => ({ value: [{ name: 'j1', kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: false }, { name: 'j2', kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: false }] }))
+  on('fs.read', (_$, e) => ({
+    value: e.path.includes('j1') ? JSON.stringify({ state: 'blocked', name: 'bennu PR', detail: 'approve the plan' }) : JSON.stringify({ state: 'working' }),
+  }))
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await clock.advance(3000)
+  expect(titles[0]).toBe('>_ SYSMON :: gibson')
+  expect(notes).toEqual(['PWR in the red']) // once, not every tick
+
+  const ui = await $.ui.mount({ plugin: 'sysmon', surface: 'terminal', component: 'Pane', requestId: 'sysmon', props: {} as never })
+  expect(await ui.find({ type: 'Text', text: /ATTN.*agent waiting :: planner/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /ATTN.*job blocked :: bennu PR :: approve the plan/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /UP.*2h00m :: \$3\.00 :: \$1\.50\/hr :: AGT 1 running/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /5H.*62%/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /PWR.*12% discharging/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /TPS/ })).toBeDefined()
   await ui.unmount()
 })

@@ -1,9 +1,15 @@
 # sysmon
 
 A hacker-style live pane for Claude Code: neon braille line graphs of memory use,
-network download (RX) and upload (TX), and context tokens per turn.
+network download (RX) and upload (TX), model output speed (TPS) and context tokens
+per turn, with rate limits, cost, battery and an attention line for agents that
+are waiting on you.
 
 ```
+▌ATTN job blocked :: bennu PR :: approve the plan
+▌UP  1h12m :: $4.12 :: $3.43/hr :: AGT 2 running
+▌5H  ▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░ 62% :: resets 1h12m
+▌PWR 82% discharging
 ▌MEM 75% :: 12.0/16 GB
 ⠀⠀⠀⠀⠀⠀⣀⣀⡠⠤⠤⠒⠒⠒⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉
 ▌RX  1.2 MB/s :: peak 4.5 MB/s
@@ -32,9 +38,25 @@ claude plugin install sysmon --marketplace adamsrnmsu/claude-sysmon
 144 columns wide. Memory and network are sampled every second; the token graph
 adds a point after each turn.
 
+- **ATTN** (at most two lines): background jobs whose state is blocked or failed,
+  subagents of this session that are waiting or failed, and this session when it
+  sits on a permission or input prompt.
+- **UP**: session uptime, cost so far and burn rate, and running subagents.
+- **5H / 7D**: rate-limit windows and when they reset (subscriptions only).
+- **PWR**: battery, and `THROTTLED` when macOS limits the CPU (hidden on desktops).
+- **TPS**: streamed model output, estimated at 4 characters a token.
+- **TOK**: a red `▼` marks each turn where the context fell 30% or more (a compaction or `/clear`).
+
+A reading past its red line turns red and raises one notification as it crosses:
+memory 90%, context 85%, a rate limit 90%, battery 15% while discharging, or throttling.
+
 ## Limitations
 
 - macOS only: it reads `vm_stat` and `netstat`. On Linux or Windows the graphs stay empty.
 - Needs a Claude Code build with mods (plugin hooks modules), which are early access.
 - Network speed is summed across every non-loopback interface, VPN tunnels included.
 - A failed sample is skipped silently.
+- The job lines read Claude Code's own `~/.claude/jobs/*/state.json` files, which are
+  not a documented interface; a Claude Code update can silently empty them.
+- Organization-managed installs skip the `classic.Notification` hook, so the
+  permission-prompt line stays empty there.
