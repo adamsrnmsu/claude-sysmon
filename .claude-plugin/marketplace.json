@@ -9,5 +9,5 @@
       "source": "./"
     }
   ],
-  "description": "Hacker-style live memory, network and token graphs for Claude Code"
+  "description": "Hacker-style live pane for Claude Code: system graphs, rate limits, cost and agent attention"
 }

@@ -1,3 +1,7 @@
+export type Limit = { kind: string; percentUsed: number; resetsAt?: string }
+
+export type Power = { percent: number; state: string; throttled: boolean }
+
 export type Samples = {
   mem: number[]
   rx: number[]
@@ -6,6 +10,15 @@ export type Samples = {
   memTotalGb: number
   tokens: number[]
   window: number
+  tps: number[]
+  limits: Limit[]
+  costUsd: number
+  startedAt: number
+  now: number
+  running: number
+  power: Power | null
+  attn: string[]
+  prompt: string
 }
 
 declare module 'claude-code' {

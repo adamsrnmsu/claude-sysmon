@@ -1,7 +1,7 @@
 {
   "name": "sysmon",
-  "version": "0.1.0",
-  "description": "Hacker-style live braille line graphs of memory and network usage",
+  "version": "0.2.0",
+  "description": "Hacker-style live pane: memory, network, tokens/sec and context graphs, rate limits, cost, battery and agent attention",
   "types": "./types/index.d.ts",
   "author": {
     "name": "adamsrnmsu"
