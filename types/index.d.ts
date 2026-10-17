@@ -19,7 +19,13 @@ export type Samples = {
   power: Power | null
   attn: string[]
   prompt: string
+  sessions: number
+  busy: number
+  peerRunning: number
 }
+
+// What each session's sysmon publishes for the others, in ~/.claude/sysmon/<sessionId>.json
+export type Beat = { at: number; running: number; attn: string[]; prompt: string }
 
 declare module 'claude-code' {
   interface PluginState {

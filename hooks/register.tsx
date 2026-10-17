@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { AgentInfo, EngineInterface, Register } from 'claude-code'
 
-import type { Power, Samples } from '../types'
+import type { Beat, Power, Samples } from '../types'
 
 const PANE = 'sysmon'
 const KEEP = 240
@@ -12,6 +12,7 @@ const ORANGE = '#ff8800'
 const EMPTY: Samples = {
   mem: [], rx: [], tx: [], memUsedGb: 0, memTotalGb: 0, tokens: [], window: 0,
   tps: [], limits: [], costUsd: 0, startedAt: 0, now: 0, running: 0, power: null, attn: [], prompt: '',
+  sessions: 0, busy: 0, peerRunning: 0,
 }
 const samples = atom({ plugin: 'sysmon', key: 'samples' } as const, EMPTY)
 const LIMIT_LABEL: Record<string, string> = { five_hour: '5H ', seven_day: '7D ', spend_limit: '$$ ' }
@@ -127,10 +128,41 @@ const jobAttention = async ($: EngineInterface) => {
   return out
 }
 
+// Every live session on the machine: Claude Code's registry (one file per process; undocumented)
+// joined with the heartbeat each session's sysmon writes, which carries what the registry lacks
+export const peers = async ($: EngineInterface, home: string, me: string, now: number) => {
+  const reg = `${home}/.claude/sessions`
+  const sessions: { pid: number; sessionId: string; name?: string; status?: string }[] = []
+  for (const f of await $.fs.list(reg)) {
+    if (!f.name.endsWith('.json')) continue
+    try {
+      sessions.push(JSON.parse(await $.fs.read(`${reg}/${f.name}`)))
+    } catch {} // read mid-write; the next pass sees it
+  }
+  // A crashed process leaves its file behind: keep the sessions whose pid still runs
+  const ps = await $.process.run(['ps', '-o', 'pid=', '-p', sessions.map(s => s.pid).join(',') || '1'])
+  const alive = new Set(ps.stdout.split(/\s+/).filter(Boolean))
+  const live = sessions.filter(s => alive.has(String(s.pid)))
+  let running = 0
+  const attn: string[] = []
+  for (const s of live) {
+    if (s.sessionId === me) continue
+    try {
+      const b: Beat = JSON.parse(await $.fs.read(`${home}/.claude/sysmon/${s.sessionId}.json`))
+      if (now - b.at > 20_000) continue // its sysmon stopped, or is a version without heartbeats
+      const name = s.name ?? s.sessionId.slice(0, 8)
+      running += b.running
+      if (b.prompt) attn.push(`session ${name} :: ${b.prompt}`)
+      attn.push(...b.attn.map(line => `${line} @ ${name}`))
+    } catch {} // no sysmon heartbeat from that session
+  }
+  return { sessions: live.length, busy: live.filter(s => s.status === 'busy').length, running, attn }
+}
+
 let hot = new Set<string>()
 
 // Every write goes through here, so a reading that crosses its red line notifies once, whatever wrote it
-const put = async ($: EngineInterface, fn: (s: Samples) => Samples) => {
+const put = async ($: EngineInterface, fn: (s: Samples) => Samples): Promise<Samples> => {
   let next = EMPTY
   // State outlives hot reloads; fill fields an older version of this mod did not store
   await update($, samples, s => (next = fn({ ...EMPTY, ...s })))
@@ -138,18 +170,23 @@ const put = async ($: EngineInterface, fn: (s: Samples) => Samples) => {
   const fresh = now.filter(k => !hot.has(k))
   hot = new Set(now)
   if (fresh.length) void $.ui.notify(`${fresh.map(k => LIMIT_LABEL[k]?.trim() ?? k).join(', ')} in the red`, { title: 'SYSMON' }).catch(() => undefined)
+  return next
 }
 
 export const register: Register = on => {
   let prevNet: { rx: number; tx: number; at: number } | undefined
   let chars = 0 // streamed text and thinking since the last tick
   let title = '>_ SYSMON'
+  let beat = '' // this session's heartbeat file
 
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'sysmon', description: 'Open the live memory and network graphs' })
     const host = (await $.process.run(['hostname', '-s']).catch(() => undefined))?.stdout.split('\n')[0]?.trim()
     title = `>_ SYSMON :: ${host || 'localhost'}`
     void $.ui.open({ id: PANE, title })
+    const home = (await $.env.get('HOME').catch(() => undefined)) ?? ''
+    const me = await $.session.id().catch(() => '')
+    if (home && me) beat = `${home}/.claude/sysmon/${me}.json`
 
     const usage = await $.session.usage().catch(() => undefined)
     if (usage) {
@@ -190,22 +227,28 @@ export const register: Register = on => {
     }
     // Slower sources, each on its own so one failing leaves the others standing
     const slow = async () => {
-      const [batt, therm, agents, jobs] = await Promise.all([
+      const now = await $.clock.now()
+      const [batt, therm, agents, jobs, others] = await Promise.all([
         $.process.run(['pmset', '-g', 'batt']).then(r => r.stdout, () => ''),
         $.process.run(['pmset', '-g', 'therm']).then(r => r.stdout, () => ''),
         $.agent.list().catch((): AgentInfo[] => []),
         jobAttention($).catch((): string[] => []),
+        home ? peers($, home, me, now).catch(() => undefined) : undefined,
       ])
-      await put($, s => ({
+      const running = agents.filter(a => a.status === 'running' || a.status === 'pending').length
+      const mine = agents.filter(a => a.status === 'waiting' || a.status === 'failed')
+        .map(a => `agent ${a.status} :: ${a.name ?? a.description}`)
+      const s = await put($, s => ({
         ...s,
         power: parsePmset(batt, therm),
-        running: agents.filter(a => a.status === 'running' || a.status === 'pending').length,
-        attn: [
-          ...agents.filter(a => a.status === 'waiting' || a.status === 'failed')
-            .map(a => `agent ${a.status} :: ${a.name ?? a.description}`),
-          ...jobs,
-        ],
+        running,
+        sessions: others?.sessions ?? 0,
+        busy: others?.busy ?? 0,
+        peerRunning: others?.running ?? 0,
+        attn: [...mine, ...(others?.attn ?? []), ...jobs],
       }))
+      const out: Beat = { at: now, running, attn: mine, prompt: s.prompt }
+      if (beat) void $.fs.write(beat, JSON.stringify(out)).catch(() => undefined)
     }
     let tick = 0
     $.clock.every(1000, () => {
@@ -215,6 +258,12 @@ export const register: Register = on => {
 
     return next(e)
   })
+
+  // A clean exit takes its heartbeat with it; a crash leaves one that goes stale in 20s
+  on('session.end', async ($, e, next) => {
+    if (beat) await $.process.run(['rm', '-f', beat]).catch(() => undefined)
+    return next(e)
+  }).catch(($, e, next) => next(e))
 
   // Rate-limit windows and cost, pushed by the engine whenever they move
   on('session.measure', async ($, e, next) => {
@@ -300,7 +349,8 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column">
         {shown.map(line => row('ATTN', line, RED))}
-        {row('UP ', `${dur(up)} :: $${s.costUsd.toFixed(2)}${burn} :: AGT ${s.running} running`, GREEN)}
+        {row('UP ', `${dur(up)} :: $${s.costUsd.toFixed(2)}${burn}`, GREEN)}
+        {row('AGT', `${s.running + s.peerRunning} running${s.sessions ? ` :: ${s.sessions} sessions, ${s.busy} busy` : ''}`, GREEN)}
         {s.limits.map(l => row(LIMIT_LABEL[l.kind] ?? l.kind,
           `${bar(l.percentUsed, 20)} ${l.percentUsed}%${l.resetsAt ? ` :: resets ${dur(Date.parse(l.resetsAt) - s.now)}` : ''}`,
           tint(l.kind, '#00ffff')))}

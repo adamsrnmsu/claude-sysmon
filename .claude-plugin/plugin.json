@@ -1,6 +1,6 @@
 {
   "name": "sysmon",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Hacker-style live pane: memory, network, tokens/sec and context graphs, rate limits, cost, battery and agent attention",
   "types": "./types/index.d.ts",
   "author": {
