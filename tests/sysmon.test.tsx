@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-import { alarms, bar, braille, drops, dur, parseNetstat, parsePmset, parseVmStat, rate } from '../hooks/register'
+import { alarms, bar, braille, drops, dur, parseNetstat, parsePmset, parseVmStat, peers, rate } from '../hooks/register'
 
 const VM = `Mach Virtual Memory Statistics: (page size of 4096 bytes)
 Pages free:                                     4797.
@@ -95,7 +95,7 @@ test('formats bars, durations, compaction marks and red lines', async () => {
   // 100k then 30k is a compaction: its mark lands in the right cell of a 2-cell row
   expect(drops([100, 120, 100, 30], 2)).toBe(' ▼')
   expect(drops([100, 90, 80], 2)).toBe('  ')
-  const calm = { mem: [50], rx: [], tx: [], memUsedGb: 0, memTotalGb: 0, tokens: [100], window: 1000, tps: [], limits: [{ kind: 'five_hour', percentUsed: 40 }], costUsd: 0, startedAt: 0, now: 0, running: 0, power: null, attn: [], prompt: '' }
+  const calm = { mem: [50], rx: [], tx: [], memUsedGb: 0, memTotalGb: 0, tokens: [100], window: 1000, tps: [], limits: [{ kind: 'five_hour', percentUsed: 40 }], costUsd: 0, startedAt: 0, now: 0, running: 0, power: null, attn: [], prompt: '', sessions: 0, busy: 0, peerRunning: 0 }
   expect(alarms(calm)).toEqual([])
   expect(alarms({ ...calm, mem: [95], tokens: [900], limits: [{ kind: 'five_hour', percentUsed: 92 }], power: { percent: 10, state: 'discharging', throttled: false } }))
     .toEqual(['MEM', 'TOK', 'five_hour', 'PWR'])
@@ -140,9 +140,50 @@ test('shows limits, power, agents and the attention lines', async ($, on) => {
   const ui = await $.ui.mount({ plugin: 'sysmon', surface: 'terminal', component: 'Pane', requestId: 'sysmon', props: {} as never })
   expect(await ui.find({ type: 'Text', text: /ATTN.*agent waiting :: planner/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /ATTN.*job blocked :: bennu PR :: approve the plan/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /UP.*2h00m :: \$3\.00 :: \$1\.50\/hr :: AGT 1 running/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /UP.*2h00m :: \$3\.00 :: \$1\.50\/hr/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /AGT.*1 running/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /5H.*62%/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /PWR.*12% discharging/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /TPS/ })).toBeDefined()
   await ui.unmount()
+})
+
+test('sums agents and attention across live sessions from registry and heartbeats', async ($, on) => {
+  const clock = mock.clock(on)
+  const files: Record<string, unknown> = {
+    '/h/.claude/sessions/1.json': { pid: 1, sessionId: 'me', name: 'this one', status: 'busy' },
+    '/h/.claude/sessions/2.json': { pid: 2, sessionId: 'aaa', name: 'bennu', status: 'busy' },
+    '/h/.claude/sessions/3.json': { pid: 3, sessionId: 'bbb', name: 'docs', status: 'idle' },
+    '/h/.claude/sessions/9.json': { pid: 9, sessionId: 'dead', name: 'crashed', status: 'busy' },
+    '/h/.claude/sysmon/aaa.json': { at: 0, running: 2, attn: ['agent waiting :: planner'], prompt: 'Claude needs your permission to use Bash' },
+    '/h/.claude/sysmon/bbb.json': { at: -60_000, running: 7, attn: [], prompt: '' }, // stale: its sysmon stopped
+  }
+  const run = (stdout: string, exitCode = 0) => ({ value: { exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
+  on('process.run', (_$, e) =>
+    e.argv[0] === 'sysctl' ? run('131072') : e.argv[0] === 'vm_stat' ? run(VM) : e.argv[0] === 'ps' ? run('    1\n    2\n    3\n', 1) : run(NET))
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  on('command.register', (_$, e) => ({ value: { command: e.name } }))
+  on('ui.open', () => ({ value: { isPlaced: true as const } }))
+  on('env.get', () => ({ value: '/h' }))
+  on('session.id', () => ({ value: 'me' }))
+  on('agent.list', () => ({ value: [{ id: 'a1', description: 'scan', type: 'Explore', status: 'running' as const }] }))
+  on('fs.list', (_$, e) => ({
+    value: e.path?.endsWith('sessions') ? ['1', '2', '3', '9'].map(n => ({ name: `${n}.json`, kind: 'file' as const, size: 1, mtimeMs: 0, isLink: false })) : [],
+  }))
+  on('fs.read', (_$, e) => {
+    if (!(e.path in files)) throw new Error('ENOENT')
+    return { value: JSON.stringify(files[e.path]) }
+  })
+  const written: Record<string, string> = {}
+  on('fs.write', (_$, e) => ((written[e.path] = e.text), { value: undefined }))
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await clock.advance(1000)
+
+  const ui = await $.ui.mount({ plugin: 'sysmon', surface: 'terminal', component: 'Pane', requestId: 'sysmon', props: {} as never })
+  expect(await ui.find({ type: 'Text', text: /AGT.*3 running :: 3 sessions, 2 busy/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /ATTN.*session bennu :: Claude needs your permission/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /ATTN.*agent waiting :: planner @ bennu/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /crashed|docs/ })).toBeUndefined()
+  await ui.unmount()
+  expect(JSON.parse(written['/h/.claude/sysmon/me.json']!)).toMatchObject({ running: 1, attn: [], prompt: '' })
 })

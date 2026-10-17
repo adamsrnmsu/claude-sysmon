@@ -7,7 +7,8 @@ are waiting on you.
 
 ```
 ▌ATTN job blocked :: bennu PR :: approve the plan
-▌UP  1h12m :: $4.12 :: $3.43/hr :: AGT 2 running
+▌UP  1h12m :: $4.12 :: $3.43/hr
+▌AGT 5 running :: 3 sessions, 2 busy
 ▌5H  ▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░ 62% :: resets 1h12m
 ▌PWR 82% discharging
 ▌MEM 75% :: 12.0/16 GB
@@ -39,9 +40,11 @@ claude plugin install sysmon --marketplace adamsrnmsu/claude-sysmon
 adds a point after each turn.
 
 - **ATTN** (at most two lines): background jobs whose state is blocked or failed,
-  subagents of this session that are waiting or failed, and this session when it
-  sits on a permission or input prompt.
-- **UP**: session uptime, cost so far and burn rate, and running subagents.
+  and, across every session on the machine, subagents that are waiting or failed
+  and sessions sitting on a permission or input prompt.
+- **UP**: session uptime, cost so far and burn rate.
+- **AGT**: running subagents summed across every session, and how many sessions
+  are live and busy.
 - **5H / 7D**: rate-limit windows and when they reset (subscriptions only).
 - **PWR**: battery, and `THROTTLED` when macOS limits the CPU (hidden on desktops).
 - **TPS**: streamed model output, estimated at 4 characters a token.
@@ -58,5 +61,9 @@ memory 90%, context 85%, a rate limit 90%, battery 15% while discharging, or thr
 - A failed sample is skipped silently.
 - The job lines read Claude Code's own `~/.claude/jobs/*/state.json` files, which are
   not a documented interface; a Claude Code update can silently empty them.
+- Cross-session counts come from Claude Code's `~/.claude/sessions/*.json` registry
+  (undocumented) and a heartbeat each sysmon writes to `~/.claude/sysmon/<session>.json`
+  every 5 seconds. A session without sysmon 0.3.0 or later counts toward sessions
+  but not toward agents; a crashed session leaves a heartbeat file behind.
 - Organization-managed installs skip the `classic.Notification` hook, so the
   permission-prompt line stays empty there.
