@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-import { alarms, bar, braille, drops, dur, parseNetstat, parsePmset, parseVmStat, peers, rate } from '../hooks/register'
+import { alarms, bar, braille, drops, dur, graphRows, parseNetstat, parsePmset, parseVmStat, peers, rate } from '../hooks/register'
 
 const VM = `Mach Virtual Memory Statistics: (page size of 4096 bytes)
 Pages free:                                     4797.
@@ -95,6 +95,11 @@ test('formats bars, durations, compaction marks and red lines', async () => {
   // 100k then 30k is a compaction: its mark lands in the right cell of a 2-cell row
   expect(drops([100, 120, 100, 30], 2)).toBe(' ▼')
   expect(drops([100, 90, 80], 2)).toBe('  ')
+  expect(graphRows(0, 5, 5)).toBe(4) // no room given: full height
+  expect(graphRows(60, 5, 5)).toBe(4) // tall pane: capped
+  expect(graphRows(25, 5, 5)).toBe(3) // 5 text + 5 graphs of (label + 3) = 25
+  expect(graphRows(12, 5, 5)).toBe(0) // too short: label readouts only
+  expect(braille([1, 2], 2, 0, 3)).toEqual([])
   const calm = { mem: [50], rx: [], tx: [], memUsedGb: 0, memTotalGb: 0, tokens: [100], window: 1000, tps: [], limits: [{ kind: 'five_hour', percentUsed: 40 }], costUsd: 0, startedAt: 0, now: 0, running: 0, power: null, attn: [], prompt: '', sessions: 0, busy: 0, peerRunning: 0 }
   expect(alarms(calm)).toEqual([])
   expect(alarms({ ...calm, mem: [95], tokens: [900], limits: [{ kind: 'five_hour', percentUsed: 92 }], power: { percent: 10, state: 'discharging', throttled: false } }))

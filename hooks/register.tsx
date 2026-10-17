@@ -5,7 +5,7 @@ import type { Beat, Power, Samples } from '../types'
 
 const PANE = 'sysmon'
 const KEEP = 240
-const ROWS = 4 // text rows per graph; each braille cell is 4 dots tall
+const ROWS = 4 // most text rows per graph; each braille cell is 4 dots tall
 const GREEN = '#00ff41'
 const RED = '#ff0033'
 const ORANGE = '#ff8800'
@@ -95,6 +95,11 @@ export const dur = (ms: number) => {
     : m >= 60 ? `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}m`
     : `${m}m`
 }
+
+// Braille rows per graph: the room left after the text lines, shared out, 0 (the readout alone) to ROWS.
+// Each graph also takes a row for its label. No room given (0): full height.
+export const graphRows = (room: number, text: number, graphs: number) =>
+  room > 0 ? Math.min(ROWS, Math.max(0, Math.floor((room - text) / graphs) - 1)) : ROWS
 
 export const kTok = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n))
 
@@ -330,12 +335,6 @@ export const register: Register = on => {
         <Text color={color === RED ? RED : GREEN}>{value}</Text>
       </Text>
     )
-    const graph = (label: string, value: string, xs: number[], max: number, color: string) => (
-      <Box flexDirection="column">
-        {row(label, value, color)}
-        {braille(xs, max, ROWS, cols).map(line => <Text color={color}>{line}</Text>)}
-      </Box>
-    )
 
     if (s.mem.length === 0) return <Text color={GREEN} dimColor>establishing uplink...</Text>
 
@@ -345,6 +344,15 @@ export const register: Register = on => {
     const burn = up > 60_000 ? ` :: $${(s.costUsd / (up / 3_600_000)).toFixed(2)}/hr` : ''
     const ctxColor = tint('TOK', '#ffd000')
     const marks = drops(s.tokens, cols)
+    const showMarks = s.tokens.length > 0 && marks.includes('▼')
+    const text = shown.length + 2 + s.limits.length + (s.power ? 1 : 0) + (showMarks ? 1 : 0)
+    const rows = graphRows(e.props.scroll?.bodyRows ?? 0, text, s.tokens.length > 0 ? 5 : 4)
+    const graph = (label: string, value: string, xs: number[], max: number, color: string) => (
+      <Box flexDirection="column">
+        {row(label, value, color)}
+        {braille(xs, max, rows, cols).map(line => <Text color={color}>{line}</Text>)}
+      </Box>
+    )
 
     return (
       <Box flexDirection="column">
@@ -361,7 +369,7 @@ export const register: Register = on => {
         {graph('TPS', `~${Math.round(last(s.tps))} tok/s :: peak ~${Math.round(peak(s.tps, 10))}`, s.tps, peak(s.tps, 10), ORANGE)}
         {s.tokens.length > 0 &&
           graph('TOK', `${kTok(last(s.tokens))}/${kTok(s.window)} :: ${s.tokens.length} turns`, s.tokens, s.window, ctxColor)}
-        {s.tokens.length > 0 && marks.includes('▼') && <Text color={RED}>{marks}</Text>}
+        {showMarks && <Text color={RED}>{marks}</Text>}
       </Box>
     )
   })
