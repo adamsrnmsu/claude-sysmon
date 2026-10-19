@@ -11,10 +11,10 @@ are waiting on you.
 ▌AGT 5 running :: 3 sessions, 2 busy
 ▌5H  ▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░ 62% :: resets 1h12m
 ▌PWR 82% discharging
-▌MEM 75% :: 12.0/16 GB
 ⠀⠀⠀⠀⠀⠀⣀⣀⡠⠤⠤⠒⠒⠒⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉
-▌RX  1.2 MB/s :: peak 4.5 MB/s
+▌MEM 75% :: 12.0/16 GB
 ⠀⠀⡀⢀⠀⠀⢠⠃⢣⠀⡰⠁⠀⠑⢄⠀⠀⢀⠔⠁⠀⠀
+▌RX  1.2 MB/s :: peak 4.5 MB/s
 ```
 
 ## Install
@@ -49,6 +49,12 @@ adds a point after each turn.
 - **PWR**: battery, and `THROTTLED` when macOS limits the CPU (hidden on desktops).
 - **TPS**: streamed model output, estimated at 4 characters a token.
 - **TOK**: a red `▼` marks each turn where the context fell 30% or more (a compaction or `/clear`).
+
+Each graph's label sits under it as a caption.
+
+Clawd lives beside the top rows. It frets when a reading goes red, waves when
+something waits on you, trots while tokens stream, and otherwise blinks, wanders,
+waves or naps every so often. It hides when the pane is under 40 columns wide.
 
 A reading past its red line turns red and raises one notification as it crosses:
 memory 90%, context 85%, a rate limit 90%, battery 15% while discharging, or throttling.

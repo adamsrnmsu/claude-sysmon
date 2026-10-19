@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-import { alarms, bar, braille, drops, dur, graphRows, parseNetstat, parsePmset, parseVmStat, peers, rate } from '../hooks/register'
+import { alarms, bar, braille, clawd, clawdRows, drops, dur, graphRows, parseNetstat, parsePmset, parseVmStat, peers, rate } from '../hooks/register'
 
 const VM = `Mach Virtual Memory Statistics: (page size of 4096 bytes)
 Pages free:                                     4797.
@@ -52,6 +52,11 @@ test('samples every second and draws three graphs in the pane', async ($, on) =>
     expect(await ui.find({ type: 'Text', text: /RX.*2\.0 KB\/s/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /TX.*0 B\/s/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /TOK/ })).toBeUndefined()
+    // each label is a caption under its braille, the last graph's too
+    const texts = (await ui.findAll({ type: 'Text' })).filter(t => t.props.color === '#ff00ff').map(t => t.text)
+    expect(texts[texts.length - 1]).toMatch(/^▌TX/)
+    expect(texts[0]).toMatch(/^[\u2800-\u28ff]+$/)
+    expect(await ui.find({ type: 'Text', text: /▐▛███▜▌/ })).toBeDefined() // Clawd
     await ui.unmount()
   }
 })
@@ -191,4 +196,17 @@ test('sums agents and attention across live sessions from registry and heartbeat
   expect(await ui.find({ type: 'Text', text: /crashed|docs/ })).toBeUndefined()
   await ui.unmount()
   expect(JSON.parse(written['/h/.claude/sysmon/me.json']!)).toMatchObject({ running: 1, attn: [], prompt: '' })
+})
+
+test('Clawd reacts to alarms and prompts and idles with an antic now and then', async () => {
+  const calm = { mem: [50], rx: [], tx: [], memUsedGb: 0, memTotalGb: 0, tokens: [], window: 0, tps: [0], limits: [], costUsd: 0, startedAt: 0, now: 0, running: 0, power: null, attn: [], prompt: '', sessions: 0, busy: 0, peerRunning: 0 }
+  expect(clawd({ ...calm, mem: [95] }).say).toBe('!!')
+  expect(clawd({ ...calm, prompt: 'Claude needs your permission' }).say).toBe('hey')
+  expect(clawd({ ...calm, tps: [40] }).say).toBe('...')
+  expect(clawd({ ...calm, now: 21_000 }).say).toBe('hi') // second cycle: a wave
+  expect(clawd({ ...calm, now: 10_000 })).toEqual({ pose: 'blink', dx: 1, say: '' })
+  expect(clawd({ ...calm, now: 11_000 })).toEqual({ pose: 'idle', dx: 1, say: '' })
+  // every frame is the same width, so the text rows beside it never shift
+  const widths = new Set(Array.from({ length: 80 }, (_, t) => clawdRows({ ...calm, now: t * 1000 })).flat().map(l => l.length))
+  expect(widths.size).toBe(1)
 })
