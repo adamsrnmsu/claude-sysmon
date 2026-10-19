@@ -173,44 +173,39 @@ const CLAWD = {
   blink: ['          ', ' ▐█████▌  ', '▝▜█████▛▘ ', '  ▘▘ ▝▝   '],
   wave: ['          ', ' ▐▛███▜▌▗ ', '▝▜█████▛▘ ', '  ▘▘ ▝▝   '],
   wave2: ['          ', ' ▐▛███▜▌▝ ', '▝▜█████▛  ', '  ▘▘ ▝▝   '],
-  step: ['          ', ' ▐▛███▜▌  ', '▝▜█████▛▘ ', '  ▝▝ ▘▘   '],
   reach: ['          ', ' ▐▛███▜▌  ', '▝▜█████▛  ', '  ▘▘ ▝▝   '],
   flower: ['          ', ' ▐▛███▜▌  ', '▝▜█████▛▘✿', '  ▘▘ ▝▝   '],
   bloom: ['        ✿ ', ' ▐▛███▜▌▐ ', '▝▜█████▛▘ ', '  ▘▘ ▝▝   '],
   hat: ['  ▄███▄   ', ' ▐▛███▜▌  ', '▝▜█████▛▘ ', '  ▘▘ ▝▝   '],
   tip: ['   ▄███▄  ', ' ▐▛███▜▌▝ ', '▝▜█████▛  ', '  ▘▘ ▝▝   '],
 }
-const WALK = 6 // cells Clawd wanders along the bottom
-const HOME = 2
-
-// What Clawd does this second: reacts to the pane's state, else an antic now and then.
-// Pure in s.now, so the pane's own once-a-second redraw animates it.
-export const clawd = (s: Samples): { pose: keyof typeof CLAWD; dx: number; say: string } => {
+// What Clawd does this second, standing in place: waves when something waits on the
+// person, else a trick now and then and a blink between. Pure in s.now, so the pane's
+// own once-a-second redraw animates it.
+export const clawd = (s: Samples): { pose: keyof typeof CLAWD; say: string } => {
   const t = Math.floor(s.now / 1000)
   const odd = t % 2 === 1
-  if (alarms(s).length) return { pose: odd ? 'step' : 'idle', dx: odd ? HOME - 1 : HOME + 1, say: '!!' }
-  if (s.prompt || s.attn.length) return { pose: odd ? 'wave2' : 'wave', dx: HOME, say: 'hey' }
-  if (last(s.tps) > 0) return { pose: odd ? 'step' : 'idle', dx: HOME, say: '...' }
-  const beat = t % 20 // ponytail: antics on a fixed 20s cycle; randomize if it feels too regular
+  if (s.prompt || s.attn.length) return { pose: odd ? 'wave2' : 'wave', say: 'hey' }
+  if (last(s.tps) > 0) return { pose: 'idle', say: '...' }
+  const beat = t % 20 // ponytail: tricks on a fixed 20s cycle; randomize if it feels too regular
   if (beat < 4) {
-    switch (Math.floor(t / 20) % 6) {
-      case 0: return { pose: odd ? 'step' : 'idle', dx: [3, 4, 6, 4][beat]!, say: '' }
-      case 1: return { pose: odd ? 'wave2' : 'wave', dx: HOME, say: 'hi' }
-      case 2: return { pose: 'blink', dx: HOME, say: beat % 2 ? 'zZ' : 'z' }
-      case 3: return { pose: (['reach', 'flower', 'bloom', 'bloom'] as const)[beat]!, dx: HOME, say: beat > 1 ? 'ta-da' : '' }
-      case 4: return { pose: odd ? 'tip' : 'hat', dx: HOME, say: odd ? 'fancy' : '' }
-      default: return { pose: 'idle', dx: beat < 2 ? 0 : WALK, say: '?' }
+    switch (Math.floor(t / 20) % 5) {
+      case 0: return { pose: odd ? 'wave2' : 'wave', say: 'hi' }
+      case 1: return { pose: 'blink', say: beat % 2 ? 'zZ' : 'z' }
+      case 2: return { pose: (['reach', 'flower', 'bloom', 'bloom'] as const)[beat]!, say: beat > 1 ? 'ta-da' : '' }
+      case 3: return { pose: odd ? 'tip' : 'hat', say: odd ? 'fancy' : '' }
+      default: return { pose: 'idle', say: '?' }
     }
   }
-  return { pose: t % 5 === 0 ? 'blink' : 'idle', dx: HOME, say: '' }
+  return { pose: t % 5 === 0 ? 'blink' : 'idle', say: '' }
 }
 
 // Clawd's rows as colored runs, a fixed width so nothing beside them shifts
 export const clawdRows = (s: Samples) => {
-  const { pose, dx, say } = clawd(s)
+  const { pose, say } = clawd(s)
   const hatted = pose === 'hat' || pose === 'tip'
   return CLAWD[pose].map((line, i) => {
-    const row = `${' '.repeat(dx)}${line} ${i === 1 ? say : ''}`.padEnd(WALK + 16)
+    const row = `  ${line} ${i === 1 ? say : ''}`.padEnd(18)
     return row.split(/(✿)/).filter(Boolean).map(text => ({
       text,
       color: text === '✿' ? PINK : hatted && i === 0 ? HAT : CLAY,

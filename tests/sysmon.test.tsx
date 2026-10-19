@@ -199,18 +199,19 @@ test('sums agents and attention across live sessions from registry and heartbeat
   expect(JSON.parse(written['/h/.claude/sysmon/me.json']!)).toMatchObject({ running: 1, attn: [], prompt: '' })
 })
 
-test('Clawd reacts to alarms and prompts and idles with an antic now and then', async () => {
+test('Clawd stands still, waves at prompts and does a trick now and then', async () => {
   const calm = { mem: [50], rx: [], tx: [], memUsedGb: 0, memTotalGb: 0, tokens: [], window: 0, tps: [0], limits: [], costUsd: 0, startedAt: 0, now: 0, running: 0, power: null, attn: [], prompt: '', sessions: 0, busy: 0, peerRunning: 0 }
-  expect(clawd({ ...calm, mem: [95] }).say).toBe('!!')
+  expect(clawd({ ...calm, mem: [95], now: 11_000 }).say).toBe('') // no alarm reaction
   expect(clawd({ ...calm, prompt: 'Claude needs your permission' }).say).toBe('hey')
   expect(clawd({ ...calm, tps: [40] }).say).toBe('...')
-  expect(clawd({ ...calm, now: 21_000 }).say).toBe('hi') // second cycle: a wave
-  expect(clawd({ ...calm, now: 10_000 })).toEqual({ pose: 'blink', dx: 2, say: '' })
-  expect(clawd({ ...calm, now: 11_000 })).toEqual({ pose: 'idle', dx: 2, say: '' })
-  // fourth cycle pulls out a flower, fifth puts on a hat
-  expect(clawdRows({ ...calm, now: 62_000 })[0]).toContainEqual({ text: '✿', color: '#ff79c6' })
-  expect(clawdRows({ ...calm, now: 80_000 })[0]!.some(r => r.text.includes('▄███▄') && r.color === '#b0b0ff')).toBe(true)
-  // every frame is the same width, so nothing beside Clawd shifts
-  const rows = Array.from({ length: 120 }, (_, t) => clawdRows({ ...calm, now: t * 1000 })).flat()
-  expect(new Set(rows.map(r => r.map(x => x.text).join('').length)).size).toBe(1)
+  expect(clawd({ ...calm, now: 1_000 }).say).toBe('hi') // first cycle: a wave
+  expect(clawd({ ...calm, now: 10_000 })).toEqual({ pose: 'blink', say: '' })
+  expect(clawd({ ...calm, now: 11_000 })).toEqual({ pose: 'idle', say: '' })
+  // third cycle pulls out a flower, fourth puts on a hat
+  expect(clawdRows({ ...calm, now: 42_000 })[0]).toContainEqual({ text: '✿', color: '#ff79c6' })
+  expect(clawdRows({ ...calm, now: 60_000 })[0]!.some(r => r.text.includes('▄███▄') && r.color === '#b0b0ff')).toBe(true)
+  // every frame is the same width and Clawd's feet never move
+  const rows = Array.from({ length: 120 }, (_, t) => clawdRows({ ...calm, now: t * 1000 }))
+  expect(new Set(rows.flat().map(r => r.map(x => x.text).join('').length)).size).toBe(1)
+  expect(new Set(rows.map(r => r[3]!.map(x => x.text).join(''))).size).toBe(1)
 })

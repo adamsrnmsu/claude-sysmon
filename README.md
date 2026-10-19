@@ -52,10 +52,10 @@ adds a point after each turn.
 
 Each graph's label sits under it as a caption.
 
-Clawd lives at the bottom of the pane. It frets when a reading goes red, waves
-when something waits on you, trots while tokens stream, and otherwise blinks,
-wanders, waves, naps, pulls out a flower or puts on a top hat every so often. It
-hides when the pane is too short to keep every graph's label.
+Clawd stands at the bottom of the pane. It waves when something waits on you
+and otherwise blinks, with a trick every so often: a wave, a nap, a flower
+pulled out from behind its back, or a top hat. It hides when the pane is too
+short to keep every graph's label.
 
 A reading past its red line turns red and raises one notification as it crosses:
 memory 90%, context 85%, a rate limit 90%, battery 15% while discharging, or throttling.
