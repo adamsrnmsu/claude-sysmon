@@ -108,6 +108,7 @@ test('formats bars, durations, compaction marks and red lines', async () => {
   expect(braille([1, 2], 2, 0, 3)).toEqual([])
   const calm = { mem: [50], rx: [], tx: [], memUsedGb: 0, memTotalGb: 0, tokens: [100], window: 1000, tps: [], limits: [{ kind: 'five_hour', percentUsed: 40 }], costUsd: 0, startedAt: 0, now: 0, running: 0, power: null, attn: [], prompt: '', sessions: 0, busy: 0, peerRunning: 0 }
   expect(alarms(calm)).toEqual([])
+  expect(alarms({ ...calm, power: { percent: 100, state: 'charged', throttled: true } })).toEqual([]) // drawn blue
   expect(alarms({ ...calm, mem: [95], tokens: [900], limits: [{ kind: 'five_hour', percentUsed: 92 }], power: { percent: 10, state: 'discharging', throttled: false } }))
     .toEqual(['MEM', 'TOK', 'five_hour', 'PWR'])
 })
@@ -149,8 +150,8 @@ test('shows limits, power, agents and the attention lines', async ($, on) => {
   expect(notes).toEqual(['PWR in the red']) // once, not every tick
 
   const ui = await $.ui.mount({ plugin: 'sysmon', surface: 'terminal', component: 'Pane', requestId: 'sysmon', props: {} as never })
-  expect(await ui.find({ type: 'Text', text: /ATTN.*agent waiting :: planner/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /ATTN.*job blocked :: bennu PR :: approve the plan/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /< agent waiting :: planner/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /< job blocked :: bennu PR :: approve the plan/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /UP.*2h00m :: \$3\.00 :: \$1\.50\/hr/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /AGT.*1 running/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /5H.*62%/ })).toBeDefined()
@@ -192,24 +193,25 @@ test('sums agents and attention across live sessions from registry and heartbeat
 
   const ui = await $.ui.mount({ plugin: 'sysmon', surface: 'terminal', component: 'Pane', requestId: 'sysmon', props: {} as never })
   expect(await ui.find({ type: 'Text', text: /AGT.*3 running :: 3 sessions, 2 busy/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /ATTN.*session bennu :: Claude needs your permission/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /ATTN.*agent waiting :: planner @ bennu/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /< session bennu :: Claude needs your permission/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /< agent waiting :: planner @ bennu/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /crashed|docs/ })).toBeUndefined()
   await ui.unmount()
   expect(JSON.parse(written['/h/.claude/sysmon/me.json']!)).toMatchObject({ running: 1, attn: [], prompt: '' })
 })
 
-test('Clawd stands still, waves at prompts and does a trick now and then', async () => {
+test('Clawd stands still, says what waits on the person and does a trick now and then', async () => {
   const calm = { mem: [50], rx: [], tx: [], memUsedGb: 0, memTotalGb: 0, tokens: [], window: 0, tps: [0], limits: [], costUsd: 0, startedAt: 0, now: 0, running: 0, power: null, attn: [], prompt: '', sessions: 0, busy: 0, peerRunning: 0 }
   expect(clawd({ ...calm, mem: [95], now: 11_000 }).say).toBe('') // no alarm reaction
-  expect(clawd({ ...calm, prompt: 'Claude needs your permission' }).say).toBe('hey')
+  expect(clawd({ ...calm, now: 41_000 }, true)).toEqual({ pose: 'idle', say: '' }) // no trick while relaying
+  expect(clawdRows(calm, ['session x :: needs you'])[1]!.map(r => r.text).join('')).toMatch(/< session x :: needs you/)
   expect(clawd({ ...calm, tps: [40] }).say).toBe('...')
-  expect(clawd({ ...calm, now: 1_000 }).say).toBe('hi') // first cycle: a wave
+  expect(clawd({ ...calm, now: 1_000 }).say).toBe('zZ') // first cycle: a nap
   expect(clawd({ ...calm, now: 10_000 })).toEqual({ pose: 'blink', say: '' })
   expect(clawd({ ...calm, now: 11_000 })).toEqual({ pose: 'idle', say: '' })
-  // third cycle pulls out a flower, fourth puts on a hat
-  expect(clawdRows({ ...calm, now: 42_000 })[0]).toContainEqual({ text: '✿', color: '#ff79c6' })
-  expect(clawdRows({ ...calm, now: 60_000 })[0]!.some(r => r.text.includes('▄███▄') && r.color === '#b0b0ff')).toBe(true)
+  // second cycle pulls out a flower, third puts on a hat
+  expect(clawdRows({ ...calm, now: 22_000 })[0]).toContainEqual({ text: '✿', color: '#ff79c6' })
+  expect(clawdRows({ ...calm, now: 40_000 })[0]!.some(r => r.text.includes('▄███▄') && r.color === '#b0b0ff')).toBe(true)
   // every frame is the same width and Clawd's feet never move
   const rows = Array.from({ length: 120 }, (_, t) => clawdRows({ ...calm, now: t * 1000 }))
   expect(new Set(rows.flat().map(r => r.map(x => x.text).join('').length)).size).toBe(1)
