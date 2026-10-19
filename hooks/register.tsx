@@ -10,6 +10,8 @@ const GREEN = '#00ff41'
 const RED = '#ff0033'
 const ORANGE = '#ff8800'
 const CLAY = '#d97757'
+const PINK = '#ff79c6'
+const HAT = '#b0b0ff'
 const EMPTY: Samples = {
   mem: [], rx: [], tx: [], memUsedGb: 0, memTotalGb: 0, tokens: [], window: 0,
   tps: [], limits: [], costUsd: 0, startedAt: 0, now: 0, running: 0, power: null, attn: [], prompt: '',
@@ -165,39 +167,55 @@ export const peers = async ($: EngineInterface, home: string, me: string, now: n
   return { sessions: live.length, busy: live.filter(s => s.status === 'busy').length, running, attn }
 }
 
-// Clawd, Claude Code's mascot, three text rows tall
+// Clawd, Claude Code's mascot: a row for a hat or a raised flower, then three of Clawd
 const CLAWD = {
-  idle: [' ▐▛███▜▌ ', '▝▜█████▛▘', '  ▘▘ ▝▝  '],
-  blink: [' ▐█████▌ ', '▝▜█████▛▘', '  ▘▘ ▝▝  '],
-  wave: [' ▐▛███▜▌▗', '▝▜█████▛▘', '  ▘▘ ▝▝  '],
-  wave2: [' ▐▛███▜▌▝', '▝▜█████▛ ', '  ▘▘ ▝▝  '],
-  step: [' ▐▛███▜▌ ', '▝▜█████▛▘', '  ▝▝ ▘▘  '],
+  idle: ['          ', ' ▐▛███▜▌  ', '▝▜█████▛▘ ', '  ▘▘ ▝▝   '],
+  blink: ['          ', ' ▐█████▌  ', '▝▜█████▛▘ ', '  ▘▘ ▝▝   '],
+  wave: ['          ', ' ▐▛███▜▌▗ ', '▝▜█████▛▘ ', '  ▘▘ ▝▝   '],
+  wave2: ['          ', ' ▐▛███▜▌▝ ', '▝▜█████▛  ', '  ▘▘ ▝▝   '],
+  step: ['          ', ' ▐▛███▜▌  ', '▝▜█████▛▘ ', '  ▝▝ ▘▘   '],
+  reach: ['          ', ' ▐▛███▜▌  ', '▝▜█████▛  ', '  ▘▘ ▝▝   '],
+  flower: ['          ', ' ▐▛███▜▌  ', '▝▜█████▛▘✿', '  ▘▘ ▝▝   '],
+  bloom: ['        ✿ ', ' ▐▛███▜▌▐ ', '▝▜█████▛▘ ', '  ▘▘ ▝▝   '],
+  hat: ['  ▄███▄   ', ' ▐▛███▜▌  ', '▝▜█████▛▘ ', '  ▘▘ ▝▝   '],
+  tip: ['   ▄███▄  ', ' ▐▛███▜▌▝ ', '▝▜█████▛  ', '  ▘▘ ▝▝   '],
 }
+const WALK = 6 // cells Clawd wanders along the bottom
+const HOME = 2
 
 // What Clawd does this second: reacts to the pane's state, else an antic now and then.
 // Pure in s.now, so the pane's own once-a-second redraw animates it.
 export const clawd = (s: Samples): { pose: keyof typeof CLAWD; dx: number; say: string } => {
   const t = Math.floor(s.now / 1000)
   const odd = t % 2 === 1
-  if (alarms(s).length) return { pose: odd ? 'step' : 'idle', dx: odd ? 0 : 2, say: '!!' }
-  if (s.prompt || s.attn.length) return { pose: odd ? 'wave2' : 'wave', dx: 1, say: 'hey' }
-  if (last(s.tps) > 0) return { pose: odd ? 'step' : 'idle', dx: 1, say: '...' }
+  if (alarms(s).length) return { pose: odd ? 'step' : 'idle', dx: odd ? HOME - 1 : HOME + 1, say: '!!' }
+  if (s.prompt || s.attn.length) return { pose: odd ? 'wave2' : 'wave', dx: HOME, say: 'hey' }
+  if (last(s.tps) > 0) return { pose: odd ? 'step' : 'idle', dx: HOME, say: '...' }
   const beat = t % 20 // ponytail: antics on a fixed 20s cycle; randomize if it feels too regular
   if (beat < 4) {
-    switch (Math.floor(t / 20) % 4) {
-      case 0: return { pose: odd ? 'step' : 'idle', dx: [0, 1, 2, 1][beat]!, say: '' }
-      case 1: return { pose: odd ? 'wave2' : 'wave', dx: 1, say: 'hi' }
-      case 2: return { pose: 'blink', dx: 1, say: beat % 2 ? 'zZ' : 'z' }
-      default: return { pose: 'idle', dx: beat < 2 ? 0 : 2, say: '?' }
+    switch (Math.floor(t / 20) % 6) {
+      case 0: return { pose: odd ? 'step' : 'idle', dx: [3, 4, 6, 4][beat]!, say: '' }
+      case 1: return { pose: odd ? 'wave2' : 'wave', dx: HOME, say: 'hi' }
+      case 2: return { pose: 'blink', dx: HOME, say: beat % 2 ? 'zZ' : 'z' }
+      case 3: return { pose: (['reach', 'flower', 'bloom', 'bloom'] as const)[beat]!, dx: HOME, say: beat > 1 ? 'ta-da' : '' }
+      case 4: return { pose: odd ? 'tip' : 'hat', dx: HOME, say: odd ? 'fancy' : '' }
+      default: return { pose: 'idle', dx: beat < 2 ? 0 : WALK, say: '?' }
     }
   }
-  return { pose: t % 5 === 0 ? 'blink' : 'idle', dx: 1, say: '' }
+  return { pose: t % 5 === 0 ? 'blink' : 'idle', dx: HOME, say: '' }
 }
 
-// Clawd's rows, a fixed width so the text beside it never shifts
+// Clawd's rows as colored runs, a fixed width so nothing beside them shifts
 export const clawdRows = (s: Samples) => {
   const { pose, dx, say } = clawd(s)
-  return CLAWD[pose].map((line, i) => ` ${' '.repeat(dx)}${line}${' '.repeat(2 - dx)} ${(i === 0 ? say : '').padEnd(3)}`)
+  const hatted = pose === 'hat' || pose === 'tip'
+  return CLAWD[pose].map((line, i) => {
+    const row = `${' '.repeat(dx)}${line} ${i === 1 ? say : ''}`.padEnd(WALK + 16)
+    return row.split(/(✿)/).filter(Boolean).map(text => ({
+      text,
+      color: text === '✿' ? PINK : hatted && i === 0 ? HAT : CLAY,
+    }))
+  })
 }
 
 let hot = new Set<string>()
@@ -381,10 +399,12 @@ export const register: Register = on => {
     const ctxColor = tint('TOK', '#ffd000')
     const marks = drops(s.tokens, cols)
     const showMarks = s.tokens.length > 0 && marks.includes('▼')
-    const head = shown.length + 2 + s.limits.length + (s.power ? 1 : 0)
-    const pet = cols >= 40 // room for Clawd beside the text rows
-    const text = Math.max(head, pet ? 3 : 0) + (showMarks ? 1 : 0)
-    const rows = graphRows(e.props.scroll?.bodyRows ?? 0, text, s.tokens.length > 0 ? 5 : 4)
+    const room = e.props.scroll?.bodyRows ?? 0
+    const graphs = s.tokens.length > 0 ? 5 : 4
+    const head = shown.length + 2 + s.limits.length + (s.power ? 1 : 0) + (showMarks ? 1 : 0)
+    // Clawd's 4 rows at the bottom, only where every graph's label still fits
+    const pet = cols >= 24 && (room === 0 || room - head - 4 >= graphs)
+    const rows = graphRows(room, head + (pet ? 4 : 0), graphs)
     // The label reads as a caption under its braille
     const graph = (label: string, value: string, xs: number[], max: number, color: string, under?: string) => (
       <Box flexDirection="column">
@@ -396,18 +416,13 @@ export const register: Register = on => {
 
     return (
       <Box flexDirection="column">
-        <Box flexDirection="row">
-          <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
-            {shown.map(line => row('ATTN', line, RED))}
-            {row('UP ', `${dur(up)} :: $${s.costUsd.toFixed(2)}${burn}`, GREEN)}
-            {row('AGT', `${s.running + s.peerRunning} running${s.sessions ? ` :: ${s.sessions} sessions, ${s.busy} busy` : ''}`, GREEN)}
-            {s.limits.map(l => row(LIMIT_LABEL[l.kind] ?? l.kind,
-              `${bar(l.percentUsed, 20)} ${l.percentUsed}%${l.resetsAt ? ` :: resets ${dur(Date.parse(l.resetsAt) - s.now)}` : ''}`,
-              tint(l.kind, '#00ffff')))}
-            {s.power && row('PWR', `${s.power.percent}% ${s.power.state}${s.power.throttled ? ' :: THROTTLED' : ''}`, tint('PWR', ORANGE))}
-          </Box>
-          {pet && <Box flexDirection="column">{clawdRows(s).map(line => <Text color={CLAY}>{line}</Text>)}</Box>}
-        </Box>
+        {shown.map(line => row('ATTN', line, RED))}
+        {row('UP ', `${dur(up)} :: $${s.costUsd.toFixed(2)}${burn}`, GREEN)}
+        {row('AGT', `${s.running + s.peerRunning} running${s.sessions ? ` :: ${s.sessions} sessions, ${s.busy} busy` : ''}`, GREEN)}
+        {s.limits.map(l => row(LIMIT_LABEL[l.kind] ?? l.kind,
+          `${bar(l.percentUsed, 20)} ${l.percentUsed}%${l.resetsAt ? ` :: resets ${dur(Date.parse(l.resetsAt) - s.now)}` : ''}`,
+          tint(l.kind, '#00ffff')))}
+        {s.power && row('PWR', `${s.power.percent}% ${s.power.state}${s.power.throttled ? ' :: THROTTLED' : ''}`, tint('PWR', ORANGE))}
         {graph('MEM', `${last(s.mem).toFixed(0)}% :: ${s.memUsedGb.toFixed(1)}/${s.memTotalGb.toFixed(0)} GB`, s.mem, 100, tint('MEM', GREEN))}
         {graph('RX ', `${rate(last(s.rx))} :: peak ${rate(peak(s.rx, 1024))}`, s.rx, peak(s.rx, 1024), '#00ffff')}
         {graph('TX ', `${rate(last(s.tx))} :: peak ${rate(peak(s.tx, 1024))}`, s.tx, peak(s.tx, 1024), '#ff00ff')}
@@ -415,6 +430,9 @@ export const register: Register = on => {
         {s.tokens.length > 0 &&
           graph('TOK', `${kTok(last(s.tokens))}/${kTok(s.window)} :: ${s.tokens.length} turns`, s.tokens, s.window, ctxColor,
             showMarks ? marks : undefined)}
+        {pet && clawdRows(s).map(runs => (
+          <Text wrap="truncate">{runs.map(r => <Text color={r.color}>{r.text}</Text>)}</Text>
+        ))}
       </Box>
     )
   })

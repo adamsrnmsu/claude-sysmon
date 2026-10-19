@@ -56,7 +56,8 @@ test('samples every second and draws three graphs in the pane', async ($, on) =>
     const texts = (await ui.findAll({ type: 'Text' })).filter(t => t.props.color === '#ff00ff').map(t => t.text)
     expect(texts[texts.length - 1]).toMatch(/^▌TX/)
     expect(texts[0]).toMatch(/^[\u2800-\u28ff]+$/)
-    expect(await ui.find({ type: 'Text', text: /▐▛███▜▌/ })).toBeDefined() // Clawd
+    const all = (await ui.findAll({ type: 'Text' })).map(t => t.text)
+    expect(all.findIndex(t => /▝▜█████▛/.test(t))).toBeGreaterThan(all.findIndex(t => /^▌TPS/.test(t))) // Clawd at the bottom
     await ui.unmount()
   }
 })
@@ -204,9 +205,12 @@ test('Clawd reacts to alarms and prompts and idles with an antic now and then', 
   expect(clawd({ ...calm, prompt: 'Claude needs your permission' }).say).toBe('hey')
   expect(clawd({ ...calm, tps: [40] }).say).toBe('...')
   expect(clawd({ ...calm, now: 21_000 }).say).toBe('hi') // second cycle: a wave
-  expect(clawd({ ...calm, now: 10_000 })).toEqual({ pose: 'blink', dx: 1, say: '' })
-  expect(clawd({ ...calm, now: 11_000 })).toEqual({ pose: 'idle', dx: 1, say: '' })
-  // every frame is the same width, so the text rows beside it never shift
-  const widths = new Set(Array.from({ length: 80 }, (_, t) => clawdRows({ ...calm, now: t * 1000 })).flat().map(l => l.length))
-  expect(widths.size).toBe(1)
+  expect(clawd({ ...calm, now: 10_000 })).toEqual({ pose: 'blink', dx: 2, say: '' })
+  expect(clawd({ ...calm, now: 11_000 })).toEqual({ pose: 'idle', dx: 2, say: '' })
+  // fourth cycle pulls out a flower, fifth puts on a hat
+  expect(clawdRows({ ...calm, now: 62_000 })[0]).toContainEqual({ text: '✿', color: '#ff79c6' })
+  expect(clawdRows({ ...calm, now: 80_000 })[0]!.some(r => r.text.includes('▄███▄') && r.color === '#b0b0ff')).toBe(true)
+  // every frame is the same width, so nothing beside Clawd shifts
+  const rows = Array.from({ length: 120 }, (_, t) => clawdRows({ ...calm, now: t * 1000 })).flat()
+  expect(new Set(rows.map(r => r.map(x => x.text).join('').length)).size).toBe(1)
 })
