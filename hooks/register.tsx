@@ -184,7 +184,7 @@ const CLAWD = {
 // the pane's own once-a-second redraw animates it.
 export const clawd = (s: Samples, waiting = false): { pose: keyof typeof CLAWD; say: string } => {
   const t = Math.floor(s.now / 1000)
-  const blink = { pose: t % 5 === 0 ? 'blink' : 'idle', say: '' } as const
+  const blink = { pose: t % 15 === 0 ? 'blink' : 'idle', say: '' } as const
   if (waiting) return blink
   if (last(s.tps) > 0) return { pose: 'idle', say: '...' }
   const beat = t % 20 // ponytail: tricks on a fixed 20s cycle; randomize if it feels too regular

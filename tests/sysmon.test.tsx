@@ -207,7 +207,8 @@ test('Clawd stands still, says what waits on the person and does a trick now and
   expect(clawdRows(calm, ['session x :: needs you'])[1]!.map(r => r.text).join('')).toMatch(/< session x :: needs you/)
   expect(clawd({ ...calm, tps: [40] }).say).toBe('...')
   expect(clawd({ ...calm, now: 1_000 }).say).toBe('zZ') // first cycle: a nap
-  expect(clawd({ ...calm, now: 10_000 })).toEqual({ pose: 'blink', say: '' })
+  expect(clawd({ ...calm, now: 15_000 })).toEqual({ pose: 'blink', say: '' })
+  expect(clawd({ ...calm, now: 10_000 })).toEqual({ pose: 'idle', say: '' }) // a blink every 15s, not 5s
   expect(clawd({ ...calm, now: 11_000 })).toEqual({ pose: 'idle', say: '' })
   // second cycle pulls out a flower, third puts on a hat
   expect(clawdRows({ ...calm, now: 22_000 })[0]).toContainEqual({ text: '✿', color: '#ff79c6' })
